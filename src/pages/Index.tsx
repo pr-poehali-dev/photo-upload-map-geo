@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
+import * as exifr from "exifr";
 
 interface PhotoPin {
   id: string;
@@ -73,17 +74,29 @@ const PIN_POSITIONS = [
   { top: "40%", left: "44%" },
 ];
 
-function reverseGeocode(): Promise<string> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const streets = ["ул. Ленина", "пр. Мира", "ул. Садовая", "ул. Центральная", "пр. Победы"];
-      const cities = ["Москва", "Санкт-Петербург", "Новосибирск"];
-      const num = Math.floor(Math.random() * 50) + 1;
-      const street = streets[Math.floor(Math.random() * streets.length)];
-      const city = cities[Math.floor(Math.random() * cities.length)];
-      resolve(`${street}, ${num}, ${city}`);
-    }, 900);
-  });
+const GEOCODE_URL = "https://functions.poehali.dev/ba6f0fe7-873d-4bfc-92a7-6ca157f095d2";
+
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(`${GEOCODE_URL}?lat=${lat}&lng=${lng}`);
+    const data = await res.json();
+    if (data.address) return data.address;
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } catch {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+}
+
+async function getGpsFromExif(file: File): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const gps = await exifr.gps(file);
+    if (gps && gps.latitude && gps.longitude) {
+      return { lat: gps.latitude, lng: gps.longitude };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function formatRenamedFile(address: string, date: string, ext: string): string {

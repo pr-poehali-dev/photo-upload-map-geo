@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Геокодирование Красной площади",
+      "method": "GET",
+      "path": "/?lat=55.7539&lng=37.6208",
+      "expectedStatus": 200,
+      "expectedBody": { "address": "string" },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
