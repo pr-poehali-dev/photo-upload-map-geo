@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Получение публичного конфига",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": { "yandexMapsApiKey": "string" },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -1,6 +1,12 @@
 {
   "tests": [
     {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
       "name": "Геокодирование Красной площади",
       "method": "GET",
       "path": "/?lat=55.7539&lng=37.6208",

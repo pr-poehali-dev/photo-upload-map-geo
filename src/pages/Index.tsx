@@ -1,6 +1,13 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import * as exifr from "exifr";
+
+declare global {
+  interface Window {
+     
+    ymaps: Record<string, unknown>;
+  }
+}
 
 interface PhotoPin {
   id: string;
@@ -15,9 +22,7 @@ interface PhotoPin {
 
 const MOCK_PINS: PhotoPin[] = [
   {
-    id: "1",
-    lat: 55.751,
-    lng: 37.618,
+    id: "1", lat: 55.751, lng: 37.618,
     address: "ул. Тверская, 1, Москва",
     originalName: "IMG_0042.jpg",
     renamedName: "Тверская_1_Москва_2024-03-10.jpg",
@@ -25,9 +30,7 @@ const MOCK_PINS: PhotoPin[] = [
     thumb: "https://images.unsplash.com/photo-1513326738677-b964603b136d?w=200&q=80",
   },
   {
-    id: "2",
-    lat: 55.756,
-    lng: 37.621,
+    id: "2", lat: 55.756, lng: 37.621,
     address: "Красная площадь, 1, Москва",
     originalName: "DSC_1201.jpg",
     renamedName: "Красная_площадь_1_Москва_2024-03-11.jpg",
@@ -35,9 +38,7 @@ const MOCK_PINS: PhotoPin[] = [
     thumb: "https://images.unsplash.com/photo-1529154166925-574a0236a4f4?w=200&q=80",
   },
   {
-    id: "3",
-    lat: 55.745,
-    lng: 37.609,
+    id: "3", lat: 55.745, lng: 37.609,
     address: "Арбат, 24, Москва",
     originalName: "PHOTO_003.jpg",
     renamedName: "Арбат_24_Москва_2024-03-12.jpg",
@@ -45,9 +46,7 @@ const MOCK_PINS: PhotoPin[] = [
     thumb: "https://images.unsplash.com/photo-1520106212299-d99c443e4568?w=200&q=80",
   },
   {
-    id: "4",
-    lat: 55.762,
-    lng: 37.632,
+    id: "4", lat: 55.762, lng: 37.632,
     address: "Чистые пруды, 6, Москва",
     originalName: "IMG_4411.jpg",
     renamedName: "Чистые_пруды_6_Москва_2024-03-14.jpg",
@@ -55,9 +54,7 @@ const MOCK_PINS: PhotoPin[] = [
     thumb: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=200&q=80",
   },
   {
-    id: "5",
-    lat: 55.758,
-    lng: 37.601,
+    id: "5", lat: 55.758, lng: 37.601,
     address: "Новый Арбат, 15, Москва",
     originalName: "RAW_0077.jpg",
     renamedName: "Новый_Арбат_15_Москва_2024-03-15.jpg",
@@ -66,22 +63,14 @@ const MOCK_PINS: PhotoPin[] = [
   },
 ];
 
-const PIN_POSITIONS = [
-  { top: "44%", left: "52%" },
-  { top: "36%", left: "56%" },
-  { top: "55%", left: "46%" },
-  { top: "30%", left: "60%" },
-  { top: "40%", left: "44%" },
-];
-
 const GEOCODE_URL = "https://functions.poehali.dev/ba6f0fe7-873d-4bfc-92a7-6ca157f095d2";
+const CONFIG_URL = "https://functions.poehali.dev/53cb4bf6-b695-4882-b4d6-e5ab077dc104";
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
     const res = await fetch(`${GEOCODE_URL}?lat=${lat}&lng=${lng}`);
     const data = await res.json();
-    if (data.address) return data.address;
-    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    return data.address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   } catch {
     return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   }
@@ -90,9 +79,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
 async function getGpsFromExif(file: File): Promise<{ lat: number; lng: number } | null> {
   try {
     const gps = await exifr.gps(file);
-    if (gps && gps.latitude && gps.longitude) {
-      return { lat: gps.latitude, lng: gps.longitude };
-    }
+    if (gps?.latitude && gps?.longitude) return { lat: gps.latitude, lng: gps.longitude };
     return null;
   } catch {
     return null;
@@ -100,11 +87,19 @@ async function getGpsFromExif(file: File): Promise<{ lat: number; lng: number } 
 }
 
 function formatRenamedFile(address: string, date: string, ext: string): string {
-  const clean = address
-    .replace(/,/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/[^а-яёА-ЯЁa-zA-Z0-9_]/g, "");
+  const clean = address.replace(/,/g, "").replace(/\s+/g, "_").replace(/[^а-яёА-ЯЁa-zA-Z0-9_]/g, "");
   return `${clean}_${date}${ext}`;
+}
+
+function loadYandexMaps(apiKey: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.ymaps) { resolve(); return; }
+    const script = document.createElement("script");
+    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${apiKey}&lang=ru_RU`;
+    script.onload = () => window.ymaps.ready(resolve);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
 export default function Index() {
@@ -114,10 +109,18 @@ export default function Index() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [filterDate, setFilterDate] = useState({ from: "", to: "" });
   const [filterRadius, setFilterRadius] = useState(50);
   const [filterAddress, setFilterAddress] = useState("");
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+   
+  const ymapRef = useRef<Record<string, unknown> | null>(null);
+   
+  const markersRef = useRef<Map<string, Record<string, unknown>>>(new Map());
 
   const filteredPins = pins.filter((p) => {
     if (filterDate.from && p.date < filterDate.from) return false;
@@ -126,22 +129,124 @@ export default function Index() {
     return true;
   });
 
+  // Инициализация карты
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(CONFIG_URL);
+        const cfg = await res.json();
+        if (!cfg.yandexMapsApiKey) { setMapError(true); return; }
+        await loadYandexMaps(cfg.yandexMapsApiKey);
+        if (cancelled || !mapRef.current) return;
+        const map = new window.ymaps.Map(mapRef.current, {
+          center: [55.751, 37.618],
+          zoom: 12,
+          controls: ["zoomControl", "geolocationControl"],
+        }, {
+          suppressMapOpenBlock: true,
+        });
+        ymapRef.current = map;
+        setMapReady(true);
+      } catch {
+        setMapError(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Синхронизация пинов на карте
+  useEffect(() => {
+    if (!mapReady || !ymapRef.current) return;
+    const map = ymapRef.current;
+
+    // Удаляем старые маркеры которых нет в filteredPins
+    const filteredIds = new Set(filteredPins.map((p) => p.id));
+    markersRef.current.forEach((marker, id) => {
+      if (!filteredIds.has(id)) {
+        map.geoObjects.remove(marker);
+        markersRef.current.delete(id);
+      }
+    });
+
+    // Добавляем новые
+    filteredPins.forEach((pin) => {
+      if (markersRef.current.has(pin.id)) return;
+
+      const placemark = new window.ymaps.Placemark(
+        [pin.lat, pin.lng],
+        {
+          hintContent: pin.address,
+          balloonContent: `
+            <div style="font-family:'Golos Text',sans-serif;padding:4px;min-width:200px">
+              <img src="${pin.thumb}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:8px"/>
+              <div style="font-size:12px;font-weight:600;color:#111;margin-bottom:2px">${pin.address}</div>
+              <div style="font-size:11px;color:#888;margin-bottom:4px">${pin.date}</div>
+              <div style="font-size:10px;color:#3b82f6;word-break:break-all">${pin.renamedName}</div>
+            </div>
+          `,
+        },
+        {
+          iconLayout: "default#image",
+          iconImageHref: pin.thumb,
+          iconImageSize: [44, 44],
+          iconImageOffset: [-22, -44],
+          iconShape: { type: "Circle", coordinates: [0, 0], radius: 22 },
+        }
+      );
+
+      placemark.events.add("click", () => {
+        setSelectedPin((prev) => (prev?.id === pin.id ? null : pin));
+      });
+
+      map.geoObjects.add(placemark);
+      markersRef.current.set(pin.id, placemark);
+    });
+  }, [filteredPins, mapReady]);
+
+  // Центрирование на выбранном пине
+  useEffect(() => {
+    if (selectedPin && ymapRef.current) {
+      ymapRef.current.panTo([selectedPin.lat, selectedPin.lng], { flying: true, duration: 500 });
+    }
+  }, [selectedPin]);
+
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploading(true);
     const newPins: PhotoPin[] = [];
-    for (const file of Array.from(files)) {
-      const lat = 55.74 + Math.random() * 0.04;
-      const lng = 37.59 + Math.random() * 0.06;
-      const address = await reverseGeocode();
+    const fileArr = Array.from(files);
+
+    for (let i = 0; i < fileArr.length; i++) {
+      const file = fileArr[i];
+      setUploadStatus(`Обрабатываю ${i + 1} из ${fileArr.length}: ${file.name}`);
+
+      let lat: number;
+      let lng: number;
+      const exifGps = await getGpsFromExif(file);
+
+      if (exifGps) {
+        lat = exifGps.lat;
+        lng = exifGps.lng;
+      } else {
+        // Если EXIF нет — используем центр Москвы + небольшой разброс
+        lat = 55.74 + Math.random() * 0.04;
+        lng = 37.59 + Math.random() * 0.06;
+      }
+
+      setUploadStatus(`Определяю адрес для ${file.name}...`);
+      const address = await reverseGeocode(lat, lng);
       const today = new Date().toISOString().split("T")[0];
       const ext = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
       const renamedName = formatRenamedFile(address, today, ext);
       const thumb = URL.createObjectURL(file);
-      newPins.push({ id: Date.now() + "_" + file.name, lat, lng, address, originalName: file.name, renamedName, date: today, thumb });
+
+      newPins.push({ id: `${Date.now()}_${i}`, lat, lng, address, originalName: file.name, renamedName, date: today, thumb });
     }
+
     setPins((prev) => [...prev, ...newPins]);
     setUploading(false);
+    setUploadStatus("");
     setUploadOpen(false);
   }, []);
 
@@ -211,7 +316,7 @@ export default function Index() {
             </div>
             <button
               onClick={() => { setFilterDate({ from: "", to: "" }); setFilterAddress(""); setFilterRadius(50); }}
-              className="flex items-center gap-1 text-xs transition-colors pb-0.5"
+              className="flex items-center gap-1 text-xs transition-colors pb-0.5 hover:opacity-80"
               style={{ color: "var(--muted)" }}
             >
               <Icon name="X" size={12} />
@@ -224,77 +329,43 @@ export default function Index() {
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Map */}
-        <div className="relative flex-1 overflow-hidden" style={{ background: "#111827" }}>
-          {/* Grid */}
-          <svg className="absolute inset-0 w-full h-full" style={{ opacity: 0.15 }}>
-            <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#3b82f6" strokeWidth="0.6" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" />
-          </svg>
+        <div className="relative flex-1 overflow-hidden">
+          {/* Яндекс.Карта */}
+          <div ref={mapRef} className="w-full h-full" />
 
-          {/* Roads */}
-          <svg className="absolute inset-0 w-full h-full">
-            <line x1="0" y1="50%" x2="100%" y2="50%" stroke="#1e2533" strokeWidth="22" />
-            <line x1="50%" y1="0" x2="50%" y2="100%" stroke="#1e2533" strokeWidth="22" />
-            <line x1="15%" y1="0" x2="85%" y2="100%" stroke="#1a2030" strokeWidth="12" />
-            <line x1="85%" y1="0" x2="15%" y2="100%" stroke="#1a2030" strokeWidth="12" />
-            <line x1="0" y1="28%" x2="100%" y2="28%" stroke="#1a2030" strokeWidth="8" />
-            <line x1="0" y1="72%" x2="100%" y2="72%" stroke="#1a2030" strokeWidth="8" />
-            <circle cx="50%" cy="50%" r="140" fill="none" stroke="#1e2533" strokeWidth="18" />
-            <circle cx="50%" cy="50%" r="70" fill="none" stroke="#1c2230" strokeWidth="10" />
-            <rect x="38%" y="38%" width="24%" height="24%" rx="6" fill="#161c28" />
-          </svg>
+          {/* Загрузка карты */}
+          {!mapReady && !mapError && (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#111827" }}>
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
+                <p className="text-xs" style={{ color: "var(--muted)" }}>Загружаю карту...</p>
+              </div>
+            </div>
+          )}
 
-          {/* Map badge */}
-          <div className="absolute top-4 left-4 text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5" style={{ background: "rgba(13,17,23,0.75)", backdropFilter: "blur(8px)", color: "var(--muted)", borderColor: "var(--border)" }}>
-            <Icon name="Map" size={11} />
-            Москва и окрестности
-          </div>
+          {/* Ошибка карты */}
+          {mapError && (
+            <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#111827" }}>
+              <div className="flex flex-col items-center gap-3 text-center px-8">
+                <Icon name="MapOff" size={32} style={{ color: "var(--muted)" }} />
+                <p className="text-xs" style={{ color: "var(--muted)" }}>Не удалось загрузить карту.<br/>Проверьте API-ключ Яндекс.Карт.</p>
+              </div>
+            </div>
+          )}
 
-          {/* Zoom */}
-          <div className="absolute bottom-6 right-4 flex flex-col gap-1">
-            {["Plus", "Minus"].map((name) => (
-              <button key={name} className="w-8 h-8 rounded-lg border flex items-center justify-center transition-all hover:opacity-80" style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--text)" }}>
-                <Icon name={name} size={14} />
-              </button>
-            ))}
-          </div>
+          {/* Инфобейдж */}
+          {mapReady && (
+            <div className="absolute top-4 left-4 text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 pointer-events-none"
+              style={{ background: "rgba(13,17,23,0.75)", backdropFilter: "blur(8px)", color: "var(--muted)", borderColor: "var(--border)" }}
+            >
+              <Icon name="Map" size={11} />
+              Яндекс.Карты · {filteredPins.length} точек
+            </div>
+          )}
 
-          {/* Locate */}
-          <button className="absolute bottom-6 left-4 w-8 h-8 rounded-lg border flex items-center justify-center transition-all hover:opacity-80" style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--muted)" }}>
-            <Icon name="LocateFixed" size={14} />
-          </button>
-
-          {/* Pins */}
-          {filteredPins.map((pin, i) => {
-            const pos = PIN_POSITIONS[i % PIN_POSITIONS.length];
-            const sel = selectedPin?.id === pin.id;
-            return (
-              <button
-                key={pin.id}
-                onClick={() => setSelectedPin(sel ? null : pin)}
-                style={{ top: pos.top, left: pos.left, transform: "translate(-50%,-100%)", position: "absolute", zIndex: sel ? 20 : 10 }}
-                className={`transition-all duration-200 ${sel ? "scale-110" : "hover:scale-105"}`}
-              >
-                <div className="w-11 h-11 rounded-xl overflow-hidden border-2 shadow-lg transition-all"
-                  style={{
-                    borderColor: sel ? "var(--accent)" : "rgba(255,255,255,0.25)",
-                    boxShadow: sel ? "0 0 18px rgba(59,130,246,0.5)" : undefined,
-                  }}
-                >
-                  <img src={pin.thumb} alt={pin.address} className="w-full h-full object-cover" />
-                </div>
-                <div className="w-2 h-2 rounded-full mx-auto -mt-0.5" style={{ background: sel ? "var(--accent)" : "rgba(255,255,255,0.5)" }} />
-              </button>
-            );
-          })}
-
-          {/* Pin popup */}
+          {/* Попап выбранного пина */}
           {selectedPin && (
-            <div className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded-2xl p-4 shadow-2xl w-72 z-30 animate-fade-in border"
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-2xl p-4 shadow-2xl w-80 z-30 animate-fade-in border"
               style={{ background: "var(--surface)", borderColor: "var(--border)" }}
             >
               <button onClick={() => setSelectedPin(null)} className="absolute top-3 right-3" style={{ color: "var(--muted)" }}>
@@ -320,7 +391,7 @@ export default function Index() {
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[10px] flex items-center gap-1" style={{ color: "var(--muted)" }}>
                   <Icon name="Navigation" size={10} />
-                  {selectedPin.lat.toFixed(4)}, {selectedPin.lng.toFixed(4)}
+                  {selectedPin.lat.toFixed(5)}, {selectedPin.lng.toFixed(5)}
                 </span>
                 <button className="text-[10px] font-medium flex items-center gap-0.5 hover:underline" style={{ color: "var(--accent)" }}>
                   <Icon name="Download" size={10} />
@@ -389,7 +460,7 @@ export default function Index() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
           style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(6px)" }}
-          onClick={(e) => e.target === e.currentTarget && setUploadOpen(false)}
+          onClick={(e) => e.target === e.currentTarget && !uploading && setUploadOpen(false)}
         >
           <div className="rounded-2xl p-6 w-full max-w-md shadow-2xl border animate-scale-in"
             style={{ background: "var(--surface)", borderColor: "var(--border)" }}
@@ -397,29 +468,36 @@ export default function Index() {
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Загрузить фотографии</h2>
-                <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>Адрес определяется автоматически по GPS-координатам</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+                  {uploading ? uploadStatus : "Адрес определяется автоматически по GPS из EXIF"}
+                </p>
               </div>
-              <button onClick={() => setUploadOpen(false)} style={{ color: "var(--muted)" }}>
-                <Icon name="X" size={16} />
-              </button>
+              {!uploading && (
+                <button onClick={() => setUploadOpen(false)} style={{ color: "var(--muted)" }}>
+                  <Icon name="X" size={16} />
+                </button>
+              )}
             </div>
 
             <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragOver={(e) => { e.preventDefault(); if (!uploading) setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileRef.current?.click()}
-              className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all"
+              onDrop={!uploading ? handleDrop : undefined}
+              onClick={() => !uploading && fileRef.current?.click()}
+              className="border-2 border-dashed rounded-xl p-8 text-center transition-all"
               style={{
                 borderColor: isDragging ? "var(--accent)" : "var(--border)",
                 background: isDragging ? "rgba(59,130,246,0.07)" : "var(--bg)",
+                cursor: uploading ? "default" : "pointer",
               }}
             >
               <div className="flex flex-col items-center gap-3">
                 {uploading ? (
                   <>
-                    <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
-                    <p className="text-xs" style={{ color: "var(--muted)" }}>Определяю адреса по координатам...</p>
+                    <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
+                      style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }}
+                    />
+                    <p className="text-xs" style={{ color: "var(--muted)" }}>{uploadStatus || "Обрабатываю..."}</p>
                   </>
                 ) : (
                   <>
@@ -428,7 +506,7 @@ export default function Index() {
                     </div>
                     <div>
                       <p className="text-xs font-medium" style={{ color: "var(--text)" }}>Перетащите фото или нажмите для выбора</p>
-                      <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>JPG, PNG, HEIC · до 20 МБ</p>
+                      <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>JPG, PNG, HEIC · GPS из EXIF читается автоматически</p>
                     </div>
                   </>
                 )}
@@ -440,7 +518,7 @@ export default function Index() {
             <div className="mt-5 grid grid-cols-3 gap-3">
               {[
                 { icon: "Upload", label: "Загрузка фото", num: "01" },
-                { icon: "MapPin", label: "GPS → адрес", num: "02" },
+                { icon: "MapPin", label: "GPS из EXIF", num: "02" },
                 { icon: "Tag", label: "Переименование", num: "03" },
               ].map((s) => (
                 <div key={s.num} className="flex flex-col items-center gap-2 p-3 rounded-xl border" style={{ background: "var(--bg)", borderColor: "var(--border)" }}>
