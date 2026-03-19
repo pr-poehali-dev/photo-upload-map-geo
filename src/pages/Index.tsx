@@ -444,6 +444,50 @@ export default function Index() {
                 <Icon name="ImageOff" size={30} className="opacity-40" />
                 <p className="text-xs">Нет фото по фильтрам</p>
               </div>
+            ) : sortByPostal ? (
+              (() => {
+                const groups = filteredPins.reduce<Record<string, typeof filteredPins>>((acc, pin) => {
+                  const code = extractPostalCode(pin.address);
+                  const key = code === "000000" ? "Без индекса" : code;
+                  if (!acc[key]) acc[key] = [];
+                  acc[key].push(pin);
+                  return acc;
+                }, {});
+                return Object.entries(groups).map(([code, groupPins]) => (
+                  <div key={code}>
+                    <div className="px-4 py-1.5 flex items-center gap-2 sticky top-0 z-10" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                      <Icon name="MailOpen" size={11} style={{ color: "var(--accent)" }} />
+                      <span className="text-[11px] font-semibold font-mono" style={{ color: "var(--accent)" }}>{code}</span>
+                      <span className="text-[10px] ml-auto" style={{ color: "var(--muted)" }}>{groupPins.length} фото</span>
+                    </div>
+                    {groupPins.map((pin) => {
+                      const sel = selectedPin?.id === pin.id;
+                      return (
+                        <button
+                          key={pin.id}
+                          onClick={() => setSelectedPin(sel ? null : pin)}
+                          className="w-full flex gap-3 p-3 border-b transition-colors text-left hover:opacity-90"
+                          style={{
+                            borderColor: "var(--border)",
+                            background: sel ? "var(--bg)" : "transparent",
+                            borderLeft: sel ? "2px solid var(--accent)" : "2px solid transparent",
+                          }}
+                        >
+                          <img src={pin.thumb} alt={pin.address} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <p className="text-xs font-medium leading-tight truncate" style={{ color: "var(--text)" }}>{pin.address}</p>
+                            <p className="text-[10px]" style={{ color: "var(--muted)" }}>{pin.date}</p>
+                            <div className="flex items-center gap-1 text-[10px] mt-0.5" style={{ color: "var(--accent)" }}>
+                              <Icon name="Tag" size={9} />
+                              <span className="truncate">{pin.renamedName}</span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ));
+              })()
             ) : (
               filteredPins.map((pin) => {
                 const sel = selectedPin?.id === pin.id;
