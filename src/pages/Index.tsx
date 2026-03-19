@@ -113,6 +113,7 @@ export default function Index() {
   const [filterDate, setFilterDate] = useState({ from: "", to: "" });
   const [filterRadius, setFilterRadius] = useState(50);
   const [filterAddress, setFilterAddress] = useState("");
+  const [sortByPostal, setSortByPostal] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -122,12 +123,22 @@ export default function Index() {
    
   const markersRef = useRef<Map<string, Record<string, unknown>>>(new Map());
 
-  const filteredPins = pins.filter((p) => {
-    if (filterDate.from && p.date < filterDate.from) return false;
-    if (filterDate.to && p.date > filterDate.to) return false;
-    if (filterAddress && !p.address.toLowerCase().includes(filterAddress.toLowerCase())) return false;
-    return true;
-  });
+  const extractPostalCode = (address: string): string => {
+    const match = address.match(/\b\d{6}\b/);
+    return match ? match[0] : "000000";
+  };
+
+  const filteredPins = pins
+    .filter((p) => {
+      if (filterDate.from && p.date < filterDate.from) return false;
+      if (filterDate.to && p.date > filterDate.to) return false;
+      if (filterAddress && !p.address.toLowerCase().includes(filterAddress.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (!sortByPostal) return 0;
+      return extractPostalCode(a.address).localeCompare(extractPostalCode(b.address));
+    });
 
   // Инициализация карты
   useEffect(() => {
@@ -410,7 +421,22 @@ export default function Index() {
         <div className="w-72 border-l flex flex-col overflow-hidden shrink-0" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
           <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
             <span className="text-xs font-semibold" style={{ color: "var(--text)" }}>Фотографии</span>
-            <span className="text-xs" style={{ color: "var(--muted)" }}>{filteredPins.length} / {pins.length}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSortByPostal(v => !v)}
+                title="Сортировка по почтовому индексу"
+                className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg transition-colors"
+                style={{
+                  background: sortByPostal ? "var(--accent)" : "var(--bg)",
+                  color: sortByPostal ? "#fff" : "var(--muted)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <Icon name="ArrowUpDown" size={10} />
+                Индекс
+              </button>
+              <span className="text-xs" style={{ color: "var(--muted)" }}>{filteredPins.length} / {pins.length}</span>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {filteredPins.length === 0 ? (
@@ -435,7 +461,14 @@ export default function Index() {
                     <img src={pin.thumb} alt={pin.address} className="w-12 h-12 rounded-lg object-cover shrink-0" />
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <p className="text-xs font-medium leading-tight truncate" style={{ color: "var(--text)" }}>{pin.address}</p>
-                      <p className="text-[10px]" style={{ color: "var(--muted)" }}>{pin.date}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px]" style={{ color: "var(--muted)" }}>{pin.date}</p>
+                        {extractPostalCode(pin.address) !== "000000" && (
+                          <span className="text-[10px] font-mono px-1 rounded" style={{ background: "var(--bg)", color: "var(--muted)" }}>
+                            {extractPostalCode(pin.address)}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1 text-[10px] mt-0.5" style={{ color: "var(--accent)" }}>
                         <Icon name="Tag" size={9} />
                         <span className="truncate">{pin.renamedName}</span>
