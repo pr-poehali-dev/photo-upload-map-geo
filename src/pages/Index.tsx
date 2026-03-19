@@ -179,7 +179,11 @@ export default function Index() {
           hintContent: pin.address,
           balloonContent: `
             <div style="font-family:'Golos Text',sans-serif;padding:4px;min-width:200px">
-              <img src="${pin.thumb}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:8px"/>
+              <div style="position:relative;display:inline-block;width:100%">
+                <img src="${pin.thumb}" style="width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:8px"/>
+                <div style="position:absolute;bottom:12px;right:4px;font-size:28px;animation:dogDance 0.5s ease-in-out infinite alternate;">🐕</div>
+              </div>
+              <style>@keyframes dogDance{0%{transform:rotate(-15deg) translateY(0);}100%{transform:rotate(15deg) translateY(-6px);}}</style>
               <div style="font-size:12px;font-weight:600;color:#111;margin-bottom:2px">${pin.address}</div>
               <div style="font-size:11px;color:#888;margin-bottom:4px">${pin.date}</div>
               <div style="font-size:10px;color:#3b82f6;word-break:break-all">${pin.renamedName}</div>
