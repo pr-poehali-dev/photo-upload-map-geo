@@ -14,6 +14,7 @@ interface PhotoPin {
   lat: number;
   lng: number;
   address: string;
+  postalCode: string;
   originalName: string;
   renamedName: string;
   date: string;
@@ -23,7 +24,7 @@ interface PhotoPin {
 const MOCK_PINS: PhotoPin[] = [
   {
     id: "1", lat: 55.751, lng: 37.618,
-    address: "ул. Тверская, 1, Москва",
+    address: "ул. Тверская, 1, Москва", postalCode: "125009",
     originalName: "IMG_0042.jpg",
     renamedName: "Тверская_1_Москва_2024-03-10.jpg",
     date: "2024-03-10",
@@ -31,7 +32,7 @@ const MOCK_PINS: PhotoPin[] = [
   },
   {
     id: "2", lat: 55.756, lng: 37.621,
-    address: "Красная площадь, 1, Москва",
+    address: "Красная площадь, 1, Москва", postalCode: "109012",
     originalName: "DSC_1201.jpg",
     renamedName: "Красная_площадь_1_Москва_2024-03-11.jpg",
     date: "2024-03-11",
@@ -39,7 +40,7 @@ const MOCK_PINS: PhotoPin[] = [
   },
   {
     id: "3", lat: 55.745, lng: 37.609,
-    address: "Арбат, 24, Москва",
+    address: "Арбат, 24, Москва", postalCode: "119002",
     originalName: "PHOTO_003.jpg",
     renamedName: "Арбат_24_Москва_2024-03-12.jpg",
     date: "2024-03-12",
@@ -47,7 +48,7 @@ const MOCK_PINS: PhotoPin[] = [
   },
   {
     id: "4", lat: 55.762, lng: 37.632,
-    address: "Чистые пруды, 6, Москва",
+    address: "Чистые пруды, 6, Москва", postalCode: "101000",
     originalName: "IMG_4411.jpg",
     renamedName: "Чистые_пруды_6_Москва_2024-03-14.jpg",
     date: "2024-03-14",
@@ -55,7 +56,7 @@ const MOCK_PINS: PhotoPin[] = [
   },
   {
     id: "5", lat: 55.758, lng: 37.601,
-    address: "Новый Арбат, 15, Москва",
+    address: "Новый Арбат, 15, Москва", postalCode: "121019",
     originalName: "RAW_0077.jpg",
     renamedName: "Новый_Арбат_15_Москва_2024-03-15.jpg",
     date: "2024-03-15",
@@ -66,13 +67,32 @@ const MOCK_PINS: PhotoPin[] = [
 const GEOCODE_URL = "https://functions.poehali.dev/ba6f0fe7-873d-4bfc-92a7-6ca157f095d2";
 const CONFIG_URL = "https://functions.poehali.dev/53cb4bf6-b695-4882-b4d6-e5ab077dc104";
 
-async function reverseGeocode(lat: number, lng: number): Promise<string> {
+async function reverseGeocode(lat: number, lng: number): Promise<{ address: string; postalCode: string }> {
   try {
     const res = await fetch(`${GEOCODE_URL}?lat=${lat}&lng=${lng}`);
     const data = await res.json();
-    return data.address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    const address = data.address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    // Пробуем достать индекс из Яндекс Geocoder
+    let postalCode = "";
+    try {
+      const ymapsRes = await fetch(
+        `https://geocode-maps.yandex.ru/1.x/?apikey=&geocode=${lng},${lat}&format=json&kind=house&results=1`
+      );
+      if (ymapsRes.ok) {
+        const ymapsData = await ymapsRes.json();
+        const pos = ymapsData?.response?.GeoObjectCollection?.featureMember?.[0]
+          ?.GeoObject?.metaDataProperty?.GeocoderMetaData?.Address?.postal_code;
+        if (pos) postalCode = pos;
+      }
+    } catch { /* индекс недоступен */ }
+    // Fallback: ищем 6 цифр в строке адреса
+    if (!postalCode) {
+      const match = address.match(/\b\d{6}\b/);
+      if (match) postalCode = match[0];
+    }
+    return { address, postalCode };
   } catch {
-    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    return { address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, postalCode: "" };
   }
 }
 
@@ -123,11 +143,6 @@ export default function Index() {
    
   const markersRef = useRef<Map<string, Record<string, unknown>>>(new Map());
 
-  const extractPostalCode = (address: string): string => {
-    const match = address.match(/\b\d{6}\b/);
-    return match ? match[0] : "000000";
-  };
-
   const filteredPins = pins
     .filter((p) => {
       if (filterDate.from && p.date < filterDate.from) return false;
@@ -137,7 +152,7 @@ export default function Index() {
     })
     .sort((a, b) => {
       if (!sortByPostal) return 0;
-      return extractPostalCode(a.address).localeCompare(extractPostalCode(b.address));
+      return (a.postalCode || "999999").localeCompare(b.postalCode || "999999");
     });
 
   // Инициализация карты
@@ -196,6 +211,7 @@ export default function Index() {
               </div>
               <style>@keyframes dogDance{0%{transform:rotate(-15deg) translateY(0);}100%{transform:rotate(15deg) translateY(-6px);}}</style>
               <div style="font-size:12px;font-weight:600;color:#111;margin-bottom:2px">${pin.address}</div>
+              ${pin.postalCode ? `<div style="font-size:11px;color:#6b7280;margin-bottom:2px">📮 ${pin.postalCode}</div>` : ""}
               <div style="font-size:11px;color:#888;margin-bottom:4px">${pin.date}</div>
               <div style="font-size:10px;color:#3b82f6;word-break:break-all">${pin.renamedName}</div>
             </div>
@@ -250,13 +266,13 @@ export default function Index() {
       }
 
       setUploadStatus(`Определяю адрес для ${file.name}...`);
-      const address = await reverseGeocode(lat, lng);
+      const { address, postalCode } = await reverseGeocode(lat, lng);
       const today = new Date().toISOString().split("T")[0];
       const ext = file.name.includes(".") ? "." + file.name.split(".").pop() : "";
       const renamedName = formatRenamedFile(address, today, ext);
       const thumb = URL.createObjectURL(file);
 
-      newPins.push({ id: `${Date.now()}_${i}`, lat, lng, address, originalName: file.name, renamedName, date: today, thumb });
+      newPins.push({ id: `${Date.now()}_${i}`, lat, lng, address, postalCode, originalName: file.name, renamedName, date: today, thumb });
     }
 
     setPins((prev) => [...prev, ...newPins]);
@@ -390,6 +406,9 @@ export default function Index() {
                 <img src={selectedPin.thumb} alt={selectedPin.address} className="w-16 h-16 rounded-xl object-cover shrink-0" />
                 <div className="flex flex-col gap-1 min-w-0">
                   <p className="text-xs font-semibold leading-tight" style={{ color: "var(--text)" }}>{selectedPin.address}</p>
+                  {selectedPin.postalCode && (
+                    <span className="text-[10px] font-mono" style={{ color: "var(--muted)" }}>📮 {selectedPin.postalCode}</span>
+                  )}
                   <p className="text-xs" style={{ color: "var(--muted)" }}>{selectedPin.date}</p>
                   <div className="mt-1 flex flex-col gap-0.5">
                     <div className="flex items-center gap-1 text-[10px]" style={{ color: "var(--muted)" }}>
@@ -447,8 +466,7 @@ export default function Index() {
             ) : sortByPostal ? (
               (() => {
                 const groups = filteredPins.reduce<Record<string, typeof filteredPins>>((acc, pin) => {
-                  const code = extractPostalCode(pin.address);
-                  const key = code === "000000" ? "Без индекса" : code;
+                  const key = pin.postalCode || "Без индекса";
                   if (!acc[key]) acc[key] = [];
                   acc[key].push(pin);
                   return acc;
@@ -507,9 +525,9 @@ export default function Index() {
                       <p className="text-xs font-medium leading-tight truncate" style={{ color: "var(--text)" }}>{pin.address}</p>
                       <div className="flex items-center gap-2">
                         <p className="text-[10px]" style={{ color: "var(--muted)" }}>{pin.date}</p>
-                        {extractPostalCode(pin.address) !== "000000" && (
+                        {pin.postalCode && (
                           <span className="text-[10px] font-mono px-1 rounded" style={{ background: "var(--bg)", color: "var(--muted)" }}>
-                            {extractPostalCode(pin.address)}
+                            📮 {pin.postalCode}
                           </span>
                         )}
                       </div>
